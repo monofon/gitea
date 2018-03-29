@@ -2367,7 +2367,9 @@ func ForkRepository(doer, u *User, oldRepo *Repository, name, desc string) (_ *R
 		LowerName:     strings.ToLower(name),
 		Description:   desc,
 		DefaultBranch: oldRepo.DefaultBranch,
-		IsPrivate:     oldRepo.IsPrivate,
+		// CHANGES: Henrik
+		// IsPrivate:     oldRepo.IsPrivate,
+		IsPrivate:     true,
 		IsFork:        true,
 		ForkID:        oldRepo.ID,
 	}

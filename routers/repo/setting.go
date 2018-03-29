@@ -88,11 +88,18 @@ func SettingsPost(ctx *context.Context, form auth.RepoSettingForm) {
 
 		// Visibility of forked repository is forced sync with base repository.
 		if repo.IsFork {
-			form.Private = repo.BaseRepo.IsPrivate
+			// CHANGE: Henrik
+			// form.Private = repo.BaseRepo.IsPrivate
+			form.Private = true
 		}
 
 		visibilityChanged := repo.IsPrivate != form.Private
-		repo.IsPrivate = form.Private
+		// CHANGED: henrik@tramberend.de
+		if repo.Owner.IsAdmin {
+			repo.IsPrivate = form.Private
+		} else {
+			repo.IsPrivate = true 
+		}
 		if err := models.UpdateRepository(repo, visibilityChanged); err != nil {
 			ctx.ServerError("UpdateRepository", err)
 			return
