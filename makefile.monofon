@@ -1,0 +1,8 @@
+build:
+	TAGS="bindata sqlite" make generate build
+
+install: build
+	sudo service gitea stop
+	sudo -u git cp gitea ~git/gitea
+	sudo service gitea start
+

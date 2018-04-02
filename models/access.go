@@ -5,6 +5,7 @@
 package models
 
 import "fmt"
+import "code.gitea.io/gitea/modules/log"
 
 // AccessMode specifies the users access mode
 type AccessMode int
@@ -63,6 +64,15 @@ func accessLevel(e Engine, userID int64, repo *Repository) (AccessMode, error) {
 	mode := AccessModeNone
 	if !repo.IsPrivate {
 		mode = AccessModeRead
+	}
+
+	user, err := GetUserByID(userID)
+	if err != nil {
+		log.GitLogger.Fatal(0, "Strange error. Cannot find user.")
+	} else {
+		if user.IsAdmin {
+			return AccessModeAdmin, nil
+		}
 	}
 
 	if userID == 0 {
