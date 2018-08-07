@@ -75,6 +75,7 @@ func NewFuncMap() []template.FuncMap {
 		"RawTimeSince":  base.RawTimeSince,
 		"FileSize":      base.FileSize,
 		"Subtract":      base.Subtract,
+		"EntryIcon":     base.EntryIcon,
 		"Add": func(a, b int) int {
 			return a + b
 		},
@@ -179,8 +180,41 @@ func NewFuncMap() []template.FuncMap {
 			}
 			return dict, nil
 		},
-		"Printf": fmt.Sprintf,
-		"Escape": Escape,
+		"Printf":   fmt.Sprintf,
+		"Escape":   Escape,
+		"Sec2Time": models.SecToTime,
+		"ParseDeadline": func(deadline string) []string {
+			return strings.Split(deadline, "|")
+		},
+		"DefaultTheme": func() string {
+			return setting.UI.DefaultTheme
+		},
+		"dict": func(values ...interface{}) (map[string]interface{}, error) {
+			if len(values) == 0 {
+				return nil, errors.New("invalid dict call")
+			}
+
+			dict := make(map[string]interface{})
+
+			for i := 0; i < len(values); i++ {
+				switch key := values[i].(type) {
+				case string:
+					i++
+					if i == len(values) {
+						return nil, errors.New("specify the key for non array values")
+					}
+					dict[key] = values[i]
+				case map[string]interface{}:
+					m := values[i].(map[string]interface{})
+					for i, v := range m {
+						dict[i] = v
+					}
+				default:
+					return nil, errors.New("dict values must be maps")
+				}
+			}
+			return dict, nil
+		},
 	}}
 }
 
@@ -318,7 +352,7 @@ func RenderCommitBody(msg, urlPrefix string, metas map[string]string) template.H
 
 // IsMultilineCommitMessage checks to see if a commit message contains multiple lines.
 func IsMultilineCommitMessage(msg string) bool {
-	return strings.Count(strings.TrimSpace(msg), "\n") > 1
+	return strings.Count(strings.TrimSpace(msg), "\n") >= 1
 }
 
 // Actioner describes an action

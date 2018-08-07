@@ -163,6 +163,7 @@ func NewRepoContext() {
 type Repository struct {
 	ID            int64  `xorm:"pk autoincr"`
 	OwnerID       int64  `xorm:"UNIQUE(s)"`
+	OwnerName     string `xorm:"-"`
 	Owner         *User  `xorm:"-"`
 	LowerName     string `xorm:"UNIQUE(s) INDEX NOT NULL"`
 	Name          string `xorm:"INDEX NOT NULL"`
@@ -199,6 +200,7 @@ type Repository struct {
 	Size          int64              `xorm:"NOT NULL DEFAULT 0"`
 	IndexerStatus *RepoIndexerStatus `xorm:"-"`
 	IsFsckEnabled bool               `xorm:"NOT NULL DEFAULT true"`
+	Topics        []string           `xorm:"TEXT JSON"`
 
 	CreatedUnix util.TimeStamp `xorm:"INDEX created"`
 	UpdatedUnix util.TimeStamp `xorm:"INDEX updated"`
@@ -224,9 +226,17 @@ func (repo *Repository) MustOwner() *User {
 	return repo.mustOwner(x)
 }
 
+// MustOwnerName always returns valid owner name to avoid
+// conceptually impossible error handling.
+// It returns "error" and logs error details when error
+// occurs.
+func (repo *Repository) MustOwnerName() string {
+	return repo.mustOwnerName(x)
+}
+
 // FullName returns the repository full name
 func (repo *Repository) FullName() string {
-	return repo.MustOwner().Name + "/" + repo.Name
+	return repo.MustOwnerName() + "/" + repo.Name
 }
 
 // HTMLURL returns the repository HTML URL
@@ -355,22 +365,14 @@ func (repo *Repository) getUnitsByUserID(e Engine, userID int64, isAdmin bool) (
 		return err
 	}
 
-	var allTypes = make(map[UnitType]struct{}, len(allRepUnitTypes))
-	for _, team := range teams {
-		// Administrators can not be limited
-		if team.Authorize >= AccessModeAdmin {
-			return nil
-		}
-		for _, unitType := range team.UnitTypes {
-			allTypes[unitType] = struct{}{}
-		}
-	}
-
 	// unique
 	var newRepoUnits = make([]*RepoUnit, 0, len(repo.Units))
 	for _, u := range repo.Units {
-		if _, ok := allTypes[u.Type]; ok {
-			newRepoUnits = append(newRepoUnits, u)
+		for _, team := range teams {
+			if team.UnitEnabled(u.Type) {
+				newRepoUnits = append(newRepoUnits, u)
+				break
+			}
 		}
 	}
 
@@ -478,6 +480,41 @@ func (repo *Repository) mustOwner(e Engine) *User {
 	return repo.Owner
 }
 
+func (repo *Repository) getOwnerName(e Engine) error {
+	if len(repo.OwnerName) > 0 {
+		return nil
+	}
+
+	if repo.Owner != nil {
+		repo.OwnerName = repo.Owner.Name
+		return nil
+	}
+
+	u := new(User)
+	has, err := e.ID(repo.OwnerID).Cols("name").Get(u)
+	if err != nil {
+		return err
+	} else if !has {
+		return ErrUserNotExist{repo.OwnerID, "", 0}
+	}
+	repo.OwnerName = u.Name
+	return nil
+}
+
+// GetOwnerName returns the repository owner name
+func (repo *Repository) GetOwnerName() error {
+	return repo.getOwnerName(x)
+}
+
+func (repo *Repository) mustOwnerName(e Engine) string {
+	if err := repo.getOwnerName(e); err != nil {
+		log.Error(4, "Error loading repository owner name: %v", err)
+		return "error"
+	}
+
+	return repo.OwnerName
+}
+
 // ComposeMetas composes a map of metas for rendering external issue tracker URL.
 func (repo *Repository) ComposeMetas() map[string]string {
 	unit, err := repo.GetUnit(UnitTypeExternalTracker)
@@ -555,9 +592,9 @@ func (repo *Repository) GetAssignees() (_ []*User, err error) {
 	return repo.getAssignees(x)
 }
 
-// GetAssigneeByID returns the user that has write access of repository by given ID.
-func (repo *Repository) GetAssigneeByID(userID int64) (*User, error) {
-	return GetAssigneeByID(repo, userID)
+// GetUserIfHasWriteAccess returns the user that has write access of repository by given ID.
+func (repo *Repository) GetUserIfHasWriteAccess(userID int64) (*User, error) {
+	return GetUserIfHasWriteAccess(repo, userID)
 }
 
 // GetMilestoneByID returns the milestone belongs to repository by given ID.
@@ -589,7 +626,7 @@ func (repo *Repository) GetBaseRepo() (err error) {
 }
 
 func (repo *Repository) repoPath(e Engine) string {
-	return RepoPath(repo.mustOwner(e).Name, repo.Name)
+	return RepoPath(repo.mustOwnerName(e), repo.Name)
 }
 
 // RepoPath returns the repository path
@@ -744,7 +781,7 @@ var (
 // DescriptionHTML does special handles to description and return HTML string.
 func (repo *Repository) DescriptionHTML() template.HTML {
 	sanitize := func(s string) string {
-		return fmt.Sprintf(`<a href="%[1]s" target="_blank" rel="noopener">%[1]s</a>`, s)
+		return fmt.Sprintf(`<a href="%[1]s" target="_blank" rel="noopener noreferrer">%[1]s</a>`, s)
 	}
 	return template.HTML(descPattern.ReplaceAllStringFunc(markup.Sanitize(repo.Description), sanitize))
 }
@@ -1132,7 +1169,7 @@ type CreateRepoOptions struct {
 }
 
 func getRepoInitFile(tp, name string) ([]byte, error) {
-	cleanedName := strings.TrimLeft(name, "./")
+	cleanedName := strings.TrimLeft(path.Clean("/"+name), "/")
 	relPath := path.Join("options", tp, cleanedName)
 
 	// Use custom file when available.
@@ -1308,7 +1345,17 @@ func createRepository(e *xorm.Session, doer, u *User, repo *Repository) (err err
 			units = append(units, RepoUnit{
 				RepoID: repo.ID,
 				Type:   tp,
-				Config: &IssuesConfig{EnableTimetracker: setting.Service.DefaultEnableTimetracking, AllowOnlyContributorsToTrackTime: setting.Service.DefaultAllowOnlyContributorsToTrackTime},
+				Config: &IssuesConfig{
+					EnableTimetracker:                setting.Service.DefaultEnableTimetracking,
+					AllowOnlyContributorsToTrackTime: setting.Service.DefaultAllowOnlyContributorsToTrackTime,
+					EnableDependencies:               setting.Service.DefaultEnableDependencies,
+				},
+			})
+		} else if tp == UnitTypePullRequests {
+			units = append(units, RepoUnit{
+				RepoID: repo.ID,
+				Type:   tp,
+				Config: &PullRequestsConfig{AllowMerge: true, AllowRebase: true, AllowSquash: true},
 			})
 		} else {
 			units = append(units, RepoUnit{
@@ -1779,6 +1826,8 @@ func DeleteRepository(doer *User, uid, repoID int64) error {
 		&PullRequest{BaseRepoID: repoID},
 		&RepoUnit{RepoID: repoID},
 		&RepoRedirect{RedirectRepoID: repoID},
+		&Webhook{RepoID: repoID},
+		&HookTask{RepoID: repoID},
 	); err != nil {
 		return fmt.Errorf("deleteBeans: %v", err)
 	}
@@ -1799,6 +1848,12 @@ func DeleteRepository(doer *User, uid, repoID int64) error {
 			return err
 		}
 		if _, err = sess.In("issue_id", issueIDs).Delete(&IssueUser{}); err != nil {
+			return err
+		}
+		if _, err = sess.In("issue_id", issueIDs).Delete(&Reaction{}); err != nil {
+			return err
+		}
+		if _, err = sess.In("issue_id", issueIDs).Delete(&IssueWatch{}); err != nil {
 			return err
 		}
 
@@ -1903,7 +1958,7 @@ func DeleteRepository(doer *User, uid, repoID int64) error {
 func GetRepositoryByOwnerAndName(ownerName, repoName string) (*Repository, error) {
 	var repo Repository
 	has, err := x.Select("repository.*").
-		Join("INNER", "user", "`user`.id = repository.owner_id").
+		Join("INNER", "`user`", "`user`.id = repository.owner_id").
 		Where("repository.lower_name = ?", strings.ToLower(repoName)).
 		And("`user`.lower_name = ?", strings.ToLower(ownerName)).
 		Get(&repo)
@@ -2140,7 +2195,7 @@ func ReinitMissingRepositories() error {
 // SyncRepositoryHooks rewrites all repositories' pre-receive, update and post-receive hooks
 // to make sure the binary and custom conf path are up-to-date.
 func SyncRepositoryHooks() error {
-	return x.Where("id > 0").Iterate(new(Repository),
+	return x.Cols("owner_id", "name").Where("id > 0").Iterate(new(Repository),
 		func(idx int, bean interface{}) error {
 			if err := createDelegateHooks(bean.(*Repository).RepoPath()); err != nil {
 				return fmt.Errorf("SyncRepositoryHook: %v", err)
@@ -2411,6 +2466,19 @@ func ForkRepository(doer, u *User, oldRepo *Repository, name, desc string) (_ *R
 	err = sess.Commit()
 	if err != nil {
 		return nil, err
+	}
+
+	oldMode, _ := AccessLevel(doer.ID, oldRepo)
+	mode, _ := AccessLevel(doer.ID, repo)
+
+	if err = PrepareWebhooks(oldRepo, HookEventFork, &api.ForkPayload{
+		Forkee: oldRepo.APIFormat(oldMode),
+		Repo:   repo.APIFormat(mode),
+		Sender: doer.APIFormat(),
+	}); err != nil {
+		log.Error(2, "PrepareWebhooks [repo_id: %d]: %v", oldRepo.ID, err)
+	} else {
+		go HookQueue.Add(oldRepo.ID)
 	}
 
 	if err = repo.UpdateSize(); err != nil {

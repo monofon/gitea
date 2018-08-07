@@ -4,11 +4,107 @@ This changelog goes through all the changes that have been made in each release
 without substantial changes to our git log; to see the highlights of what has
 been added to each release, please refer to the [blog](https://blog.gitea.io).
 
-## [1.4.0-rc1](https://github.com/go-gitea/gitea/releases/tag/v1.4.0-rc1) - 2018-01-31
+## [1.5.0-RC1](https://github.com/go-gitea/gitea/releases/tag/v1.5.0-rc1) - 2018-07-04
+* SECURITY
+  * Limit uploaded avatar image-size to 4096px x 3072px by default (#4353)
+  * Do not allow to reuse TOTP passcode (#3878)
+* FEATURE
+  * Add cli commands to regen hooks & keys (#3979)
+  * Add support for FIDO U2F (#3971)
+  * Added user language setting (#3875)
+  * LDAP Public SSH Keys synchronization (#1844)
+  * Add topic support (#3711)
+  * Multiple assignees (#3705)
+  * Add protected branch whitelists for merging (#3689)
+  * Global code search support (#3664)
+  * Add label descriptions (#3662)
+  * Add issue search via API (#3612)
+  * Add repository setting to enable/disable health checks (#3607)
+  * Emoji Autocomplete (#3433)
+  * Implements generator cli for secrets (#3531)
+* ENHANCEMENT
+  * Add more webhooks support and refactor webhook templates directory (#3929)
+  * Add new option to allow only OAuth2/OpenID user registration (#3910)
+  * Add option to use paged LDAP search when synchronizing users (#3895)
+  * Symlink icons (#1416)
+  * Improve release page UI (#3693)
+  * Add admin dashboard option to run health checks (#3606)
+  * Add branch link in branch list (#3576)
+  * Reduce sql query times in retrieveFeeds (#3547)
+  * Option to enable or disable swagger endpoints (#3502)
+  * Add missing licenses (#3497)
+  * Reduce repo indexer disk usage (#3452)
+  * Enable caching on assets and avatars (#3376)
+  * Add repository search ordered by stars/forks. Forks column in admin repo list (#3969)
+  * Add Environment Variables to Docker template (#4012)
+  * LFS: make HTTP auth period configurable (#4035)
+  * Add config path as an optionial flag when changing pass via CLI (#4184)
+  * Refactor User Settings sections (#3900)
+  * Allow square brackets in external issue patterns (#3408)
+  * Add Attachment API (#3478)
+  * Add EnableTimetracking option to app settings (#3719)
+  * Add config option to enable or disable log executed SQL (#3726)
+  * Shows total tracked time in issue and milestone list (#3341)
+* TRANSLATION
+  * Improve English grammar and consistency (#3614)
+* DEPLOYMENT
+  * Allow Gitea to run as different USER in Docker (#3961)
+  * Provide compressed release binaries (#3991)
+  * Sign release binaries (#4188)
+
+## [1.4.3](https://github.com/go-gitea/gitea/releases/tag/v1.4.3) - 2018-06-26
+* SECURITY
+  * HTML-escape plain-text READMEs (#4192) (#4214)
+  * Fix open redirect vulnerability on login screen (#4312) (#4312)
+* BUGFIXES
+  * Fix broken monitoring page when running processes are shown (#4203) (#4208)
+  * Fix delete comment bug (#4216) (#4228)
+  * Delete reactions added to issues and comments when deleting repository (#4232) (#4237)
+  * Fix wiki URL encoding bug (#4091) (#4254)
+  * Fix code tab link when viewing tags (#3908) (#4263)
+  * Fix webhook type conflation (#4285) (#4285)
+
+## [1.4.2](https://github.com/go-gitea/gitea/releases/tag/v1.4.2) - 2018-06-04
+* BUGFIXES
+  * Adjust z-index for floating labels (#3939) (#3950)
+  * Add missing token validation on application settings page (#3976) #3978
+  * Webhook and hook_task clean up (#4006)
+  * Fix webhook bug of response info is not displayed in UI (#4023)
+  * Fix writer cannot read bare repo guide (#4033) (#4039)
+  * Don't force due date to current time (#3830) (#4057)
+  * Fix wiki redirects (#3919) (#4065)
+  * Fix attachment ENABLED (#4064) (#4066)
+  * Added deletion of an empty line at the end of file (#4054) (#4074)
+  * Use ResolveReference instead of path.Join (#4073)
+  * Fix #4081 Check for leading / in base before removing it (#4083)
+  * Respository's home page not updated after first push (#4075)
+
+## [1.4.1](https://github.com/go-gitea/gitea/releases/tag/v1.4.1) - 2018-05-03
+* BREAKING
+  * Add "error" as reserved username (#3882) (#3886)
+* SECURITY
+  * Do not allow inactive users to access repositories using private key (#3887) (#3889)
+  * Fix path cleanup in file editor, when initilizing new repository and LFS oids  (#3871) (#3873)
+  * Remove unnecessary allowed safe HTML (#3778) (#3779)
+  * Correctly check http git access rights for reverse proxy authorized users (#3721) (#3743)
+* BUGFIXES
+  * Fix to use only needed columns from tables to get repository git paths (#3870) (#3883)
+  * Fix GPG expire time display when time is zero (#3584) (#3884)
+  * Fix to update only issue last update time when adding a comment (#3855) (#3860)
+  * Fix repository star count after deleting user (#3781) (#3783)
+  * Use the active branch for the code tab (#3720) (#3776)
+  * Set default branch name on first push (#3715) (#3723)
+  * Show clipboard button if disable HTTP of git protocol (#3773) (#3774)
+
+## [1.4.0](https://github.com/go-gitea/gitea/releases/tag/v1.4.0) - 2018-03-25
 * BREAKING
   * Drop deprecated GOGS\_WORK\_DIR use (#2946)
   * Fix API status code for hook creation (#2814)
 * SECURITY
+  * Escape branch name in dropdown menu (#3691) (#3692)
+  * Refactor and simplify to correctly validate redirect to URL (#3674) (#3676)
+  * Fix escaping changed title in comments (#3530) (#3534)
+  * Escape search query (#3486) (#3488)
   * Sanitize logs for mirror sync (#3057)
 * FEATURE
   * Serve .patch and .diff for pull requests (#3305, #3293)
@@ -24,6 +120,17 @@ been added to each release, please refer to the [blog](https://blog.gitea.io).
   * Add dingtalk webhook  (#2777)
   * Responsive view (#2750)
 * BUGFIXES
+  * Fix wiki inter-links with spaces (#3560) (#3632)
+  * Fix query protected branch bug (#3563) (#3571)
+  * Fix remove team member issue (#3566) (#3570)
+  * Fix the protected branch panic issue (#3567) (#3569)
+  * If Mirrors repository no content is fetched, updated time should not be changed (#3551) (#3565)
+  * Bug fix for mirrored repository releases sorted (#3522) (#3555)
+  * Add issue closed time column to fix activity closed issues list (#3537) (#3540)
+  * Update markbates/goth library to support OAuth2 with new dropbox API (#3533) (#3539)
+  * Fixes missing avatars in offline mode (#3471) (#3477)
+  * Fix synchronization bug in repo indexer (#3455) (#3461)
+  * Fix rendering of wiki page list if wiki repo contains other files (#3454) (#3463)
   * Fix webhook X-GitHub-* headers casing for better compatibility (#3429)
   * Add content type and doctype to requests made with go-get (#3426, #3423)
   * Fix SQL type error for webhooks (#3424)

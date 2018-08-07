@@ -20,10 +20,10 @@
 //     - text/html
 //
 //     Security:
-//     - BasicAuth: []
-//     - Token: []
-//     - AccessToken: []
-//     - AuthorizationHeaderToken: []
+//     - BasicAuth :
+//     - Token :
+//     - AccessToken :
+//     - AuthorizationHeaderToken :
 //
 //     SecurityDefinitions:
 //     BasicAuth:
@@ -278,13 +278,13 @@ func mustAllowPulls(ctx *context.Context) {
 func RegisterRoutes(m *macaron.Macaron) {
 	bind := binding.Bind
 
-	if setting.API.EnableSwaggerEndpoint {
+	if setting.API.EnableSwagger {
 		m.Get("/swagger", misc.Swagger) //Render V1 by default
 	}
 
 	m.Group("/v1", func() {
 		// Miscellaneous
-		if setting.API.EnableSwaggerEndpoint {
+		if setting.API.EnableSwagger {
 			m.Get("/swagger", misc.Swagger)
 		}
 		m.Get("/version", misc.Version)
@@ -302,6 +302,7 @@ func RegisterRoutes(m *macaron.Macaron) {
 				m.Group("/tokens", func() {
 					m.Combo("").Get(user.ListAccessTokens).
 						Post(bind(api.CreateAccessTokenOption{}), user.CreateAccessToken)
+					m.Combo("/:id").Delete(user.DeleteAccessToken)
 				}, reqBasicAuth())
 			})
 		})
@@ -382,9 +383,12 @@ func RegisterRoutes(m *macaron.Macaron) {
 				m.Group("/hooks", func() {
 					m.Combo("").Get(repo.ListHooks).
 						Post(bind(api.CreateHookOption{}), repo.CreateHook)
-					m.Combo("/:id").Get(repo.GetHook).
-						Patch(bind(api.EditHookOption{}), repo.EditHook).
-						Delete(repo.DeleteHook)
+					m.Group("/:id", func() {
+						m.Combo("").Get(repo.GetHook).
+							Patch(bind(api.EditHookOption{}), repo.EditHook).
+							Delete(repo.DeleteHook)
+						m.Post("/tests", context.RepoRef(), repo.TestHook)
+					})
 				}, reqToken(), reqRepoWriter())
 				m.Group("/collaborators", func() {
 					m.Get("", repo.ListCollaborators)
@@ -443,6 +447,8 @@ func RegisterRoutes(m *macaron.Macaron) {
 							m.Combo("").Get(repo.ListTrackedTimes).
 								Post(reqToken(), bind(api.AddTimeOption{}), repo.AddTime)
 						})
+
+						m.Combo("/deadline").Post(reqToken(), bind(api.EditDeadlineOption{}), repo.UpdateIssueDeadline)
 					})
 				}, mustEnableIssues)
 				m.Group("/labels", func() {
@@ -571,5 +577,9 @@ func RegisterRoutes(m *macaron.Macaron) {
 				})
 			})
 		}, reqAdmin())
+
+		m.Group("/topics", func() {
+			m.Get("/search", repo.TopicSearch)
+		})
 	}, context.APIContexter())
 }

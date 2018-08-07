@@ -16,8 +16,26 @@ import (
 	"code.gitea.io/gitea/modules/setting"
 	"code.gitea.io/gitea/modules/util"
 	"code.gitea.io/gitea/routers/api/v1/convert"
+
 	api "code.gitea.io/sdk/gitea"
 )
+
+var searchOrderByMap = map[string]map[string]models.SearchOrderBy{
+	"asc": {
+		"alpha":   models.SearchOrderByAlphabetically,
+		"created": models.SearchOrderByOldest,
+		"updated": models.SearchOrderByLeastUpdated,
+		"size":    models.SearchOrderBySize,
+		"id":      models.SearchOrderByID,
+	},
+	"desc": {
+		"alpha":   models.SearchOrderByAlphabeticallyReverse,
+		"created": models.SearchOrderByNewest,
+		"updated": models.SearchOrderByRecentUpdated,
+		"size":    models.SearchOrderBySizeReverse,
+		"id":      models.SearchOrderByIDReverse,
+	},
+}
 
 // Search repositories via options
 func Search(ctx *context.APIContext) {
@@ -52,6 +70,17 @@ func Search(ctx *context.APIContext) {
 	//   in: query
 	//   description: if `uid` is given, search only for repos that the user owns
 	//   type: boolean
+	// - name: sort
+	//   in: query
+	//   description: sort repos by attribute. Supported values are
+	//                "alpha", "created", "updated", "size", and "id".
+	//                Default is "alpha"
+	//   type: string
+	// - name: order
+	//   in: query
+	//   description: sort order, either "asc" (ascending) or "desc" (descending).
+	//                Default is "asc", ignored if "sort" is not specified.
+	//   type: string
 	// responses:
 	//   "200":
 	//     "$ref": "#/responses/SearchResults"
@@ -85,6 +114,25 @@ func Search(ctx *context.APIContext) {
 	default:
 		ctx.Error(http.StatusUnprocessableEntity, "", fmt.Errorf("Invalid search mode: \"%s\"", mode))
 		return
+	}
+
+	var sortMode = ctx.Query("sort")
+	if len(sortMode) > 0 {
+		var sortOrder = ctx.Query("order")
+		if len(sortOrder) == 0 {
+			sortOrder = "asc"
+		}
+		if searchModeMap, ok := searchOrderByMap[sortOrder]; ok {
+			if orderBy, ok := searchModeMap[sortMode]; ok {
+				opts.OrderBy = orderBy
+			} else {
+				ctx.Error(http.StatusUnprocessableEntity, "", fmt.Errorf("Invalid sort mode: \"%s\"", sortMode))
+				return
+			}
+		} else {
+			ctx.Error(http.StatusUnprocessableEntity, "", fmt.Errorf("Invalid sort order: \"%s\"", sortOrder))
+			return
+		}
 	}
 
 	var err error
@@ -256,13 +304,15 @@ func CreateOrgRepo(ctx *context.APIContext, opt api.CreateRepoOption) {
 		return
 	}
 
-	isOwner, err := org.IsOwnedBy(ctx.User.ID)
-	if err != nil {
-		ctx.ServerError("IsOwnedBy", err)
-		return
-	} else if !isOwner {
-		ctx.Error(403, "", "Given user is not owner of organization.")
-		return
+	if !ctx.User.IsAdmin {
+		isOwner, err := org.IsOwnedBy(ctx.User.ID)
+		if err != nil {
+			ctx.ServerError("IsOwnedBy", err)
+			return
+		} else if !isOwner {
+			ctx.Error(403, "", "Given user is not owner of organization.")
+			return
+		}
 	}
 	CreateUserRepo(ctx, org, opt)
 }
@@ -305,15 +355,22 @@ func Migrate(ctx *context.APIContext, form auth.MigrateRepoForm) {
 		return
 	}
 
-	if ctxUser.IsOrganization() && !ctx.User.IsAdmin {
-		// Check ownership of organization.
-		isOwner, err := ctxUser.IsOwnedBy(ctx.User.ID)
-		if err != nil {
-			ctx.Error(500, "IsOwnedBy", err)
+	if !ctx.User.IsAdmin {
+		if !ctxUser.IsOrganization() && ctx.User.ID != ctxUser.ID {
+			ctx.Error(403, "", "Given user is not an organization.")
 			return
-		} else if !isOwner {
-			ctx.Error(403, "", "Given user is not owner of organization.")
-			return
+		}
+
+		if ctxUser.IsOrganization() {
+			// Check ownership of organization.
+			isOwner, err := ctxUser.IsOwnedBy(ctx.User.ID)
+			if err != nil {
+				ctx.Error(500, "IsOwnedBy", err)
+				return
+			} else if !isOwner {
+				ctx.Error(403, "", "Given user is not owner of organization.")
+				return
+			}
 		}
 	}
 
@@ -499,4 +556,46 @@ func MirrorSync(ctx *context.APIContext) {
 
 	go models.MirrorQueue.Add(repo.ID)
 	ctx.Status(200)
+}
+
+// TopicSearch search for creating topic
+func TopicSearch(ctx *context.Context) {
+	// swagger:operation GET /topics/search repository topicSearch
+	// ---
+	// summary: search topics via keyword
+	// produces:
+	//   - application/json
+	// parameters:
+	//   - name: q
+	//     in: query
+	//     description: keywords to search
+	//     required: true
+	//     type: string
+	// responses:
+	//   "200":
+	//     "$ref": "#/responses/Repository"
+	if ctx.User == nil {
+		ctx.JSON(403, map[string]interface{}{
+			"message": "Only owners could change the topics.",
+		})
+		return
+	}
+
+	kw := ctx.Query("q")
+
+	topics, err := models.FindTopics(&models.FindTopicOptions{
+		Keyword: kw,
+		Limit:   10,
+	})
+	if err != nil {
+		log.Error(2, "SearchTopics failed: %v", err)
+		ctx.JSON(500, map[string]interface{}{
+			"message": "Search topics failed.",
+		})
+		return
+	}
+
+	ctx.JSON(200, map[string]interface{}{
+		"topics": topics,
+	})
 }

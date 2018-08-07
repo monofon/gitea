@@ -264,7 +264,7 @@ func PrepareMergedViewPullInfo(ctx *context.Context, issue *models.Issue) *git.P
 
 	if err != nil {
 		if strings.Contains(err.Error(), "fatal: Not a valid object name") {
-			ctx.Data["IsPullReuqestBroken"] = true
+			ctx.Data["IsPullRequestBroken"] = true
 			ctx.Data["BaseTarget"] = "deleted"
 			ctx.Data["NumCommits"] = 0
 			ctx.Data["NumFiles"] = 0
@@ -302,7 +302,7 @@ func PrepareViewPullInfo(ctx *context.Context, issue *models.Issue) *git.PullReq
 	}
 
 	if pull.HeadRepo == nil || !headGitRepo.IsBranchExist(pull.HeadBranch) {
-		ctx.Data["IsPullReuqestBroken"] = true
+		ctx.Data["IsPullRequestBroken"] = true
 		ctx.Data["HeadTarget"] = "deleted"
 		ctx.Data["NumCommits"] = 0
 		ctx.Data["NumFiles"] = 0
@@ -313,7 +313,7 @@ func PrepareViewPullInfo(ctx *context.Context, issue *models.Issue) *git.PullReq
 		pull.BaseBranch, pull.HeadBranch)
 	if err != nil {
 		if strings.Contains(err.Error(), "fatal: Not a valid object name") {
-			ctx.Data["IsPullReuqestBroken"] = true
+			ctx.Data["IsPullRequestBroken"] = true
 			ctx.Data["BaseTarget"] = "deleted"
 			ctx.Data["NumCommits"] = 0
 			ctx.Data["NumFiles"] = 0
@@ -456,6 +456,12 @@ func ViewPullFiles(ctx *context.Context) {
 		ctx.ServerError("GetDiffRange", err)
 		return
 	}
+
+	if err = diff.LoadComments(issue, ctx.User); err != nil {
+		ctx.ServerError("LoadComments", err)
+		return
+	}
+
 	ctx.Data["Diff"] = diff
 	ctx.Data["DiffNotAvailable"] = diff.NumFiles() == 0
 
@@ -470,7 +476,16 @@ func ViewPullFiles(ctx *context.Context) {
 	ctx.Data["BeforeSourcePath"] = setting.AppSubURL + "/" + path.Join(headTarget, "src", "commit", startCommitID)
 	ctx.Data["RawPath"] = setting.AppSubURL + "/" + path.Join(headTarget, "raw", "commit", endCommitID)
 	ctx.Data["RequireHighlightJS"] = true
-
+	ctx.Data["RequireTribute"] = true
+	if ctx.Data["Assignees"], err = ctx.Repo.Repository.GetAssignees(); err != nil {
+		ctx.ServerError("GetAssignees", err)
+		return
+	}
+	ctx.Data["CurrentReview"], err = models.GetCurrentReview(ctx.User, issue)
+	if err != nil && !models.IsErrReviewNotExist(err) {
+		ctx.ServerError("GetCurrentReview", err)
+		return
+	}
 	ctx.HTML(200, tplPullFiles)
 }
 
@@ -524,6 +539,18 @@ func MergePullRequest(ctx *context.Context, form auth.MergePullRequestForm) {
 
 	pr.Issue = issue
 	pr.Issue.Repo = ctx.Repo.Repository
+
+	noDeps, err := models.IssueNoDependenciesLeft(issue)
+	if err != nil {
+		return
+	}
+
+	if !noDeps {
+		ctx.Flash.Error(ctx.Tr("repo.issues.dependency.pr_close_blocked"))
+		ctx.Redirect(ctx.Repo.RepoLink + "/pulls/" + com.ToStr(pr.Index))
+		return
+	}
+
 	if err = pr.Merge(ctx.User, ctx.Repo.GitRepo, models.MergeStyle(form.Do), message); err != nil {
 		if models.IsErrInvalidMergeStyle(err) {
 			ctx.Flash.Error(ctx.Tr("repo.pulls.invalid_merge_option"))
@@ -775,7 +802,7 @@ func CompareAndPullRequestPost(ctx *context.Context, form auth.CreateIssueForm) 
 		return
 	}
 
-	labelIDs, milestoneID, assigneeID := ValidateRepoMetas(ctx, form)
+	labelIDs, assigneeIDs, milestoneID := ValidateRepoMetas(ctx, form)
 	if ctx.Written() {
 		return
 	}
@@ -811,7 +838,6 @@ func CompareAndPullRequestPost(ctx *context.Context, form auth.CreateIssueForm) 
 		PosterID:    ctx.User.ID,
 		Poster:      ctx.User,
 		MilestoneID: milestoneID,
-		AssigneeID:  assigneeID,
 		IsPull:      true,
 		Content:     form.Content,
 	}
@@ -828,7 +854,12 @@ func CompareAndPullRequestPost(ctx *context.Context, form auth.CreateIssueForm) 
 	}
 	// FIXME: check error in the case two people send pull request at almost same time, give nice error prompt
 	// instead of 500.
-	if err := models.NewPullRequest(repo, pullIssue, labelIDs, attachments, pullRequest, patch); err != nil {
+
+	if err := models.NewPullRequest(repo, pullIssue, labelIDs, attachments, pullRequest, patch, assigneeIDs); err != nil {
+		if models.IsErrUserDoesNotHaveAccessToRepo(err) {
+			ctx.Error(400, "UserDoesNotHaveAccessToRepo", err.Error())
+			return
+		}
 		ctx.ServerError("NewPullRequest", err)
 		return
 	} else if err := pullRequest.PushToBaseRepo(); err != nil {

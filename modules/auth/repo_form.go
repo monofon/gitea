@@ -113,6 +113,7 @@ type RepoSettingForm struct {
 	PullsAllowSquash                 bool
 	EnableTimetracker                bool
 	AllowOnlyContributorsToTrackTime bool
+	EnableIssueDependencies          bool
 
 	// Admin settings
 	EnableHealthCheck bool
@@ -155,12 +156,17 @@ func (f *ProtectBranchForm) Validate(ctx *macaron.Context, errs binding.Errors) 
 
 // WebhookForm form for changing web hook
 type WebhookForm struct {
-	Events      string
-	Create      bool
-	Push        bool
-	PullRequest bool
-	Repository  bool
-	Active      bool
+	Events       string
+	Create       bool
+	Delete       bool
+	Fork         bool
+	Issues       bool
+	IssueComment bool
+	Release      bool
+	Push         bool
+	PullRequest  bool
+	Repository   bool
+	Active       bool
 }
 
 // PushOnly if the hook will be triggered when push
@@ -254,6 +260,7 @@ func (f *NewDingtalkHookForm) Validate(ctx *macaron.Context, errs binding.Errors
 type CreateIssueForm struct {
 	Title       string `binding:"Required;MaxSize(255)"`
 	LabelIDs    string `form:"label_ids"`
+	AssigneeIDs string `form:"assignee_ids"`
 	Ref         string `form:"ref"`
 	MilestoneID int64
 	AssigneeID  int64
@@ -356,6 +363,45 @@ func (f *MergePullRequestForm) Validate(ctx *macaron.Context, errs binding.Error
 	return validate(errs, ctx.Data, f, ctx.Locale)
 }
 
+// CodeCommentForm form for adding code comments for PRs
+type CodeCommentForm struct {
+	Content  string `binding:"Required"`
+	Side     string `binding:"Required;In(previous,proposed)"`
+	Line     int64
+	TreePath string `form:"path" binding:"Required"`
+	IsReview bool   `form:"is_review"`
+}
+
+// Validate validates the fields
+func (f *CodeCommentForm) Validate(ctx *macaron.Context, errs binding.Errors) binding.Errors {
+	return validate(errs, ctx.Data, f, ctx.Locale)
+}
+
+// SubmitReviewForm for submitting a finished code review
+type SubmitReviewForm struct {
+	Content string
+	Type    string `binding:"Required;In(approve,comment,reject)"`
+}
+
+// Validate validates the fields
+func (f *SubmitReviewForm) Validate(ctx *macaron.Context, errs binding.Errors) binding.Errors {
+	return validate(errs, ctx.Data, f, ctx.Locale)
+}
+
+// ReviewType will return the corresponding reviewtype for type
+func (f SubmitReviewForm) ReviewType() models.ReviewType {
+	switch f.Type {
+	case "approve":
+		return models.ReviewTypeApprove
+	case "comment":
+		return models.ReviewTypeComment
+	case "reject":
+		return models.ReviewTypeReject
+	default:
+		return models.ReviewTypeUnknown
+	}
+}
+
 // __________       .__
 // \______   \ ____ |  |   ____ _____    ______ ____
 //  |       _// __ \|  | _/ __ \\__  \  /  ___// __ \
@@ -365,7 +411,7 @@ func (f *MergePullRequestForm) Validate(ctx *macaron.Context, errs binding.Error
 
 // NewReleaseForm form for creating release
 type NewReleaseForm struct {
-	TagName    string `binding:"Required"`
+	TagName    string `binding:"Required;GitRefName"`
 	Target     string `form:"tag_target" binding:"Required"`
 	Title      string `binding:"Required"`
 	Content    string
@@ -514,5 +560,20 @@ type AddTimeManuallyForm struct {
 
 // Validate validates the fields
 func (f *AddTimeManuallyForm) Validate(ctx *macaron.Context, errs binding.Errors) binding.Errors {
+	return validate(errs, ctx.Data, f, ctx.Locale)
+}
+
+// SaveTopicForm form for save topics for repository
+type SaveTopicForm struct {
+	Topics []string `binding:"topics;Required;"`
+}
+
+// DeadlineForm hold the validation rules for deadlines
+type DeadlineForm struct {
+	DateString string `form:"date" binding:"Required;Size(10)"`
+}
+
+// Validate validates the fields
+func (f *DeadlineForm) Validate(ctx *macaron.Context, errs binding.Errors) binding.Errors {
 	return validate(errs, ctx.Data, f, ctx.Locale)
 }

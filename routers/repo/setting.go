@@ -209,6 +209,7 @@ func SettingsPost(ctx *context.Context, form auth.RepoSettingForm) {
 					Config: &models.IssuesConfig{
 						EnableTimetracker:                form.EnableTimetracker,
 						AllowOnlyContributorsToTrackTime: form.AllowOnlyContributorsToTrackTime,
+						EnableDependencies:               form.EnableIssueDependencies,
 					},
 				})
 			}
@@ -405,6 +406,12 @@ func CollaborationPost(ctx *context.Context) {
 			ctx.Redirect(ctx.Repo.RepoLink + "/settings/collaboration")
 			return
 		}
+	}
+
+	if got, err := ctx.Repo.Repository.IsCollaborator(u.ID); err == nil && got {
+		ctx.Flash.Error(ctx.Tr("repo.settings.add_collaborator_duplicate"))
+		ctx.Redirect(ctx.Repo.RepoLink + "/settings/collaboration")
+		return
 	}
 
 	if err = ctx.Repo.Repository.AddCollaborator(u); err != nil {

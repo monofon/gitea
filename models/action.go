@@ -122,6 +122,12 @@ func (a *Action) loadRepo() {
 	}
 }
 
+// GetActFullName gets the action's user full name.
+func (a *Action) GetActFullName() string {
+	a.loadActUser()
+	return a.ActUser.FullName
+}
+
 // GetActUserName gets the action's user name.
 func (a *Action) GetActUserName() string {
 	a.loadActUser()
@@ -471,6 +477,10 @@ func UpdateIssuesCommit(doer *User, repo *Repository, commits []*PushCommit) err
 			}
 
 			if err = issue.ChangeStatus(doer, repo, true); err != nil {
+				// Don't return an error when dependencies are open as this would let the push fail
+				if IsErrDependenciesLeft(err) {
+					return nil
+				}
 				return err
 			}
 		}
@@ -618,6 +628,16 @@ func CommitRepoAction(opts CommitRepoActionOptions) error {
 	case ActionDeleteBranch: // Delete Branch
 		isHookEventPush = true
 
+		if err = PrepareWebhooks(repo, HookEventDelete, &api.DeletePayload{
+			Ref:        refName,
+			RefType:    "branch",
+			PusherType: api.PusherTypeUser,
+			Repo:       apiRepo,
+			Sender:     apiPusher,
+		}); err != nil {
+			return fmt.Errorf("PrepareWebhooks.(delete branch): %v", err)
+		}
+
 	case ActionPushTag: // Create
 		isHookEventPush = true
 
@@ -640,6 +660,16 @@ func CommitRepoAction(opts CommitRepoActionOptions) error {
 		}
 	case ActionDeleteTag: // Delete Tag
 		isHookEventPush = true
+
+		if err = PrepareWebhooks(repo, HookEventDelete, &api.DeletePayload{
+			Ref:        refName,
+			RefType:    "tag",
+			PusherType: api.PusherTypeUser,
+			Repo:       apiRepo,
+			Sender:     apiPusher,
+		}); err != nil {
+			return fmt.Errorf("PrepareWebhooks.(delete tag): %v", err)
+		}
 	}
 
 	if isHookEventPush {
